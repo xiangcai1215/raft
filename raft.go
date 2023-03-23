@@ -58,6 +58,8 @@ type ReadOnlyOption int
 const (
 	// ReadOnlySafe guarantees the linearizability of the read only request by
 	// communicating with the quorum. It is the default and suggested option.
+	// 这里就是实现读的方式，一共两种方式，readOnly表示 readIndex读
+	// 下面是了lease方式读
 	ReadOnlySafe ReadOnlyOption = iota
 	// ReadOnlyLeaseBased ensures linearizability of the read only request by
 	// relying on the leader lease. It can be affected by clock drift.
@@ -996,6 +998,7 @@ func (r *raft) Step(m pb.Message) error {
 		// local message
 	case m.Term > r.Term:
 		if m.Type == pb.MsgVote || m.Type == pb.MsgPreVote {
+			// force is true means must handle this messages
 			force := bytes.Equal(m.Context, []byte(campaignTransfer))
 			inLease := r.checkQuorum && r.lead != None && r.electionElapsed < r.electionTimeout
 			if !force && inLease {
@@ -1250,6 +1253,7 @@ func stepLeader(r *raft, m pb.Message) error {
 			return nil
 		}
 
+		// 如果是主节点会判断当前term是否有提交log，因为一致性协议里面必须保证但前term有个日志提交
 		// Postpone read only request when this leader has not committed
 		// any log entry at its term.
 		if !r.committedEntryInCurrentTerm() {
@@ -1468,6 +1472,7 @@ func stepLeader(r *raft, m pb.Message) error {
 			return nil
 		}
 
+		// 这里会等待接收到大多数成员投票后才返回
 		if r.prs.Voters.VoteResult(r.readOnly.recvAck(m.From, m.Context)) != quorum.VoteWon {
 			return nil
 		}
@@ -1918,6 +1923,7 @@ func (r *raft) committedEntryInCurrentTerm() bool {
 
 // responseToReadIndexReq constructs a response for `req`. If `req` comes from the peer
 // itself, a blank value will be returned.
+// 这个方法来返回readState，
 func (r *raft) responseToReadIndexReq(req pb.Message, readIndex uint64) pb.Message {
 	if req.From == None || req.From == r.id {
 		r.readStates = append(r.readStates, ReadState{
@@ -2000,6 +2006,7 @@ func releasePendingReadIndexMessages(r *raft) {
 	}
 }
 
+// 根据配置，选用那种方式实现readIndex
 func sendMsgReadIndexResponse(r *raft, m pb.Message) {
 	// thinking: use an internally defined context instead of the user given context.
 	// We can express this in terms of the term and index instead of a user-supplied value.
