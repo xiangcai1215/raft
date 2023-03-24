@@ -558,6 +558,7 @@ func (r *raft) send(m pb.Message) {
 
 // sendAppend sends an append RPC with new entries (if any) and the
 // current commit index to the given peer.
+// 会将最新的commit index发送给从节点，因为从节点可能在暂停状态
 func (r *raft) sendAppend(to uint64) {
 	r.maybeSendAppend(to, true)
 }
@@ -1245,6 +1246,7 @@ func stepLeader(r *raft, m pb.Message) error {
 		r.bcastAppend()
 		return nil
 	case pb.MsgReadIndex:
+		// 如果是单主节点，之间返回
 		// only one voting member (the leader) in the cluster
 		if r.prs.IsSingleton() {
 			if resp := r.responseToReadIndexReq(m, r.raftLog.committed); resp.To != None {
@@ -1464,10 +1466,12 @@ func stepLeader(r *raft, m pb.Message) error {
 		// empty append, allowing it to recover from situations in which all the
 		// messages that filled up Inflights in the first place were dropped. Note
 		// also that the outgoing heartbeat already communicated the commit index.
+		// 发送一个新append请求，保证follower追赶上最新的index
 		if pr.Match < r.raftLog.lastIndex() {
 			r.sendAppend(m.From)
 		}
 
+		// 如果不是线性一致性读，直接返回
 		if r.readOnly.option != ReadOnlySafe || len(m.Context) == 0 {
 			return nil
 		}
@@ -2016,8 +2020,11 @@ func sendMsgReadIndexResponse(r *raft, m pb.Message) {
 	case ReadOnlySafe:
 		r.readOnly.addRequest(r.raftLog.committed, m)
 		// The local node automatically acks the request.
+		// 主节点自己先投票给自己
 		r.readOnly.recvAck(r.id, m.Entries[0].Data)
+		//心跳广播到其他节点
 		r.bcastHeartbeatWithCtx(m.Entries[0].Data)
+		//这是leaseRead 方式
 	case ReadOnlyLeaseBased:
 		if resp := r.responseToReadIndexReq(m, r.raftLog.committed); resp.To != None {
 			r.send(resp)

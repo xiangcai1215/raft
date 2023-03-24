@@ -546,6 +546,7 @@ func (rn *RawNode) TransferLeader(transferee uint64) {
 // Read State has a read index. Once the application advances further than the read
 // index, any linearizable read requests issued before the read request can be
 // processed safely. The read state will have the same rctx attached.
+// 这里是读请求的开始，如果要实现读readIndex读，需要从这里开始
 func (rn *RawNode) ReadIndex(rctx []byte) {
 	_ = rn.raft.Step(pb.Message{Type: pb.MsgReadIndex, Entries: []pb.Entry{{Data: rctx}}})
 }

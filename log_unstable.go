@@ -30,6 +30,10 @@ import pb "go.etcd.io/raft/v3/raftpb"
 // Note that unstable.offset may be less than the highest log
 // position in storage; this means that the next write to storage
 // might need to truncate the log before persisting unstable.entries.
+
+//         offset
+//____________|__________________|
+//  snapshot       entries
 type unstable struct {
 	// the incoming unstable snapshot, if any.
 	snapshot *pb.Snapshot
@@ -131,6 +135,7 @@ func (u *unstable) acceptInProgress() {
 // The method should only be called when the caller can attest that the entries
 // can not be overwritten by an in-progress log append. See the related comment
 // in newStorageAppendRespMsg.
+// 持久化unstable的数据，并且修改offset和entries
 func (u *unstable) stableTo(i, t uint64) {
 	gt, ok := u.maybeTerm(i)
 	if !ok {
@@ -185,6 +190,7 @@ func (u *unstable) stableSnapTo(i uint64) {
 	}
 }
 
+// 根据快照恢复unstable数据，设置offset/snapshot,然后将entire设置为nil
 func (u *unstable) restore(s pb.Snapshot) {
 	u.offset = s.Metadata.Index + 1
 	u.offsetInProgress = u.offset
